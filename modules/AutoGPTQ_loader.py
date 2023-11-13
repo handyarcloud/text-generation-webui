@@ -55,7 +55,20 @@ def load_quantized(model_name):
     }
 
     logger.info(f"The AutoGPTQ params are: {params}")
-    model = AutoGPTQForCausalLM.from_quantized(path_to_model, **params)
+    model = AutoGPTQForCausalLM.from_quantized(path_to_model, 
+                                               #use_safetensors=True,
+                                               #trust_remote_code=True,
+                                               #device="cuda:0",
+                                               #use_triton=False,
+                                               #quantize_config=None,
+                                               #disable_exllama=True,
+                                               #no_inject_fused_attention=True,
+                                               #no_inject_fused_mlp=True,
+                                               #desc_act=False,
+                                               #use_fast=False,
+                                               disable_exllamav2=True,
+                                               #use_cuda_fp16=False, 
+                                               **params)
 
     # These lines fix the multimodal extension when used with AutoGPTQ
     if hasattr(model, 'model'):

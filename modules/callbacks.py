@@ -9,6 +9,7 @@ from transformers import is_torch_xpu_available
 
 import modules.shared as shared
 
+import os
 
 class _StopEverythingStoppingCriteria(transformers.StoppingCriteria):
     def __init__(self):
@@ -96,4 +97,8 @@ def clear_torch_cache():
         if is_torch_xpu_available():
             torch.xpu.empty_cache()
         else:
+            os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+            gc.collect()
             torch.cuda.empty_cache()
+            torch.cuda.memory_allocated()
+            torch.cuda.memory_cached()

@@ -24,6 +24,31 @@ from modules.logging_colors import logger
 from modules.models import clear_torch_cache, local_rank
 
 
+import gc
+import traceback
+from queue import Queue
+from threading import Thread
+
+import torch
+import transformers
+
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.memory_allocated()
+torch.cuda.memory_cached()
+
+# torchキャッシュのクリア
+def clear_torch_cache():
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.memory_allocated()
+    torch.cuda.memory_cached()
+
+
+
 def generate_reply(*args, **kwargs):
     shared.generation_lock.acquire()
     try:
@@ -35,8 +60,21 @@ def generate_reply(*args, **kwargs):
 
 def _generate_reply(question, state, stopping_strings=None, is_chat=False, escape_html=False):
 
+    clear_torch_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.memory_allocated()
+    torch.cuda.memory_cached()
+
     # Find the appropriate generation function
     generate_func = apply_extensions('custom_generate_reply')
+
+    clear_torch_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.memory_allocated()
+    torch.cuda.memory_cached()
+
     if generate_func is None:
         if shared.model_name == 'None' or shared.model is None:
             logger.error("No model is loaded! Select one in the Model tab.")
@@ -56,10 +94,7 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
 
     # Find the stopping strings
     all_stop_strings = []
-    for st in (stopping_strings, state['custom_stopping_strings']):
-        if type(st) is str:
-            st = ast.literal_eval(f"[{st}]")
-
+    for st in (stopping_strings, ast.literal_eval(f"[{state['custom_stopping_strings']}]")):
         if type(st) is list and len(st) > 0:
             all_stop_strings += st
 
@@ -68,6 +103,10 @@ def _generate_reply(question, state, stopping_strings=None, is_chat=False, escap
 
     shared.stop_everything = False
     clear_torch_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.memory_allocated()
+    torch.cuda.memory_cached()
     seed = set_manual_seed(state['seed'])
     last_update = -1
     reply = ''
@@ -145,7 +184,7 @@ def decode(output_ids, skip_special_tokens=True):
     if shared.tokenizer is None:
         raise ValueError('No tokenizer is loaded')
 
-    return shared.tokenizer.decode(output_ids, skip_special_tokens=skip_special_tokens)
+    return shared.tokenizer.decode(output_ids, skip_special_tokens)
 
 
 def get_encoded_length(prompt):
@@ -233,6 +272,14 @@ def get_reply_from_output_ids(output_ids, input_ids, original_question, state, i
     return reply
 
 
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.memory_allocated()
+torch.cuda.memory_cached()
+
+
+
 def set_manual_seed(seed):
     seed = int(seed)
     if seed == -1:
@@ -277,7 +324,7 @@ def apply_stopping_strings(reply, all_stop_strings):
 
 def generate_reply_HF(question, original_question, seed, state, stopping_strings=None, is_chat=False):
     generate_params = {}
-    for k in ['max_new_tokens', 'do_sample', 'temperature', 'temperature_last', 'top_p', 'min_p', 'typical_p', 'repetition_penalty', 'presence_penalty', 'frequency_penalty', 'repetition_penalty_range', 'encoder_repetition_penalty', 'top_k', 'min_length', 'no_repeat_ngram_size', 'num_beams', 'penalty_alpha', 'length_penalty', 'early_stopping', 'tfs', 'top_a', 'mirostat_mode', 'mirostat_tau', 'mirostat_eta', 'guidance_scale']:
+    for k in ['max_new_tokens', 'do_sample', 'temperature', 'top_p', 'typical_p', 'repetition_penalty', 'presence_penalty', 'frequency_penalty', 'repetition_penalty_range', 'encoder_repetition_penalty', 'top_k', 'min_length', 'no_repeat_ngram_size', 'num_beams', 'penalty_alpha', 'length_penalty', 'early_stopping', 'tfs', 'top_a', 'mirostat_mode', 'mirostat_tau', 'mirostat_eta', 'guidance_scale']:
         generate_params[k] = state[k]
 
     if state['negative_prompt'] != '':
@@ -303,7 +350,35 @@ def generate_reply_HF(question, original_question, seed, state, stopping_strings
         generate_params.update({'synced_gpus': True})
 
     # Encode the input
-    input_ids = encode(question, add_bos_token=state['add_bos_token'], truncation_length=get_max_prompt_length(state))
+    model_name = shared.model_name  # Assuming shared.model_name is the file name
+    if model_name.startswith("llm-jp-13b-instruct-full-dolly-oasst-v1.0") or \
+       model_name.startswith("llm-jp-13b-v1.0") or \
+       model_name.startswith("llm-jp-13b-instruct-full-dolly-oasst-v1.0test3_300ver3ja") or \
+       model_name.startswith("llm-jp-13b-v1.0test3_300ver3ja") or \
+       model_name.startswith("llm-jp_llm-jp-13b-instruct-full-dolly-oasst-v1.0test3_600ver4") or \
+       model_name.startswith("llm-jp-13b-v1.0test3_600ver4") or \
+       model_name.startswith("japanese-stablelm-base-gamma-7b") or \
+       model_name.startswith("japanese-stablelm-instruct-gamma-7b") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-dolly-oasst-v1.0") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-v1.0") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-dolly-oasst-v1.0-rwkvtest2_600") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-dolly-oasst-v1.0-rwkvtest2_300") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-dolly-oasst-v1.0-rwkvtest2_500") or \
+       model_name.startswith("llm-jp-13b-instruct-full-jaster-dolly-oasst-v1.0-rwkvtest2_400") or \
+       model_name.startswith("llm-jp_llm-jp-13b-v1.0-rwkvtest2instja5_300") or \
+       model_name.startswith("llm-jp_llm-jp-13b-v1.0-rwkvtest2instja5_600") or \
+       model_name.startswith("llm-jp_llm-jp-13b-v1.0-rwkvtest2instja4_300") or \
+       model_name.startswith("llm-jp_llm-jp-13b-v1.0-rwkvtest2instja4_600") or \
+       model_name.startswith("llm-jp-13b-v1.0-rwkvtest2instja4_base-300") or \
+       model_name.startswith("llm-jp-13b-v1.0-rwkvtest2instja4_dolly-300") or \
+       model_name.startswith("llm-jp-13b-v1.0-rwkvtest2instja3_600gradient_2_batch2") or \
+       model_name.startswith("liezeleinstein_llm-13b-v1.0-rwkvtest2instja5_600gradient_8_batch2base0-2.2k-GPTQ") or \
+       model_name.startswith("llm-jp-13b-v1.0-rwkvtest2instja5_600gradient_8_batch2base0-2.2k-GPTQ"):
+       add_special_tokens = False
+    else:
+       add_special_tokens = True
+    input_ids = encode(question, add_bos_token=state['add_bos_token'], truncation_length=get_max_prompt_length(state), add_special_tokens=add_special_tokens)
+    truncation_length = get_max_prompt_length(state)
     output = input_ids[0]
     cuda = not any((shared.args.cpu, shared.args.deepspeed))
     if state['auto_max_new_tokens']:
@@ -351,6 +426,10 @@ def generate_reply_HF(question, original_question, seed, state, stopping_strings
             def generate_with_callback(callback=None, *args, **kwargs):
                 kwargs['stopping_criteria'].append(Stream(callback_func=callback))
                 clear_torch_cache()
+                gc.collect()
+                torch.cuda.empty_cache()
+                torch.cuda.memory_allocated()
+                torch.cuda.memory_cached()
                 with torch.no_grad():
                     shared.model.generate(**kwargs)
 
@@ -401,3 +480,18 @@ def generate_reply_custom(question, original_question, seed, state, stopping_str
         new_tokens = len(encode(original_question + reply)[0]) - original_tokens
         print(f'Output generated in {(t1-t0):.2f} seconds ({new_tokens/(t1-t0):.2f} tokens/s, {new_tokens} tokens, context {original_tokens}, seed {seed})')
         return
+
+
+# torchキャッシュのクリア
+def clear_torch_cache():
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.cuda.memory_allocated()
+    torch.cuda.memory_cached()
+
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.memory_allocated()
+torch.cuda.memory_cached()
